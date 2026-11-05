@@ -70,7 +70,7 @@ jobs:
           path: signing
       - uses: actions/checkout@v4
         with:
-          repository: PPUC/libserum_concentrate
+          repository: PPUC/libserum
           ref: ${{ vars.LIBSERUM_REF || 'master' }}
           path: libserum
       - name: Build serum-signing
