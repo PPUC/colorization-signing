@@ -1,0 +1,100 @@
+# Issues a certificate for the public key of a certificate request, for the GitHub account
+# that opened the issue (its numeric ID, which never changes, and its login as the name).
+#
+# The workflow runs from the default branch only; nothing of the issue is run, its text is
+# read through environment variables. The issuer key is a secret of the "signing" environment,
+# whose required reviewers approve each request before the second job can read it.
+name: Certify
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions: {}
+
+concurrency:
+  group: certify-${{ github.event.issue.number }}
+
+jobs:
+  check:
+    if: >-
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'certificate request') &&
+      (github.event.action == 'opened' || github.event.label.name == 'certificate request')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - id: key
+        name: Find the public key
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          key=$(printf '%s\n' "$BODY" | grep -oiE '(^|[^0-9a-fA-F])[0-9a-fA-F]{64}($|[^0-9a-fA-F])' \
+                | grep -oiE '[0-9a-fA-F]{64}' | head -n 1 | tr 'A-F' 'a-f')
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - if: steps.key.outputs.key == ''
+        name: Say that there is none
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$NUMBER" -R "$REPO" --body \
+            "No public key found: it is 64 hex digits, from Settings -> Signing in PPUC Colorizing DMD. Edit the issue and add the label again, or open a new request."
+
+  certify:
+    needs: check
+    if: needs.check.outputs.key != ''
+    runs-on: ubuntu-latest
+    environment: signing
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: signing
+      - uses: actions/checkout@v4
+        with:
+          repository: PPUC/libserum_concentrate
+          ref: ${{ vars.LIBSERUM_REF || 'master' }}
+          path: libserum
+      - name: Build serum-signing
+        run: |
+          c++ -std=c++20 -O2 -Ilibserum/src libserum/tools/serum-signing.cpp \
+            libserum/src/SerumSigning.cpp -o serum-signing
+      - name: Certify
+        env:
+          ISSUER_KEY: ${{ secrets.ISSUER_KEY }}
+          KEY: ${{ needs.check.outputs.key }}
+          ID: ${{ github.event.issue.user.id }}
+          LOGIN: ${{ github.event.issue.user.login }}
+        run: |
+          umask 077
+          printf '%s\n' "$ISSUER_KEY" > "$RUNNER_TEMP/issuer.key"
+          ./serum-signing certify "$RUNNER_TEMP/issuer.key" author "$KEY" "github:$ID" "$LOGIN" \
+            signing/issuer.certificate > "$RUNNER_TEMP/certificate.txt"
+          rm -f "$RUNNER_TEMP/issuer.key"
+          # The certificate leads to a root key libserum trusts.
+          ./serum-signing show "$RUNNER_TEMP/certificate.txt"
+      - name: Post the certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          ID: ${{ github.event.issue.user.id }}
+          LOGIN: ${{ github.event.issue.user.login }}
+        run: |
+          {
+            echo "Certificate for @$LOGIN (github:$ID). PPUC Colorizing DMD picks it up by itself;"
+            echo "to enter it by hand, paste it into Settings -> Signing -> Certificate."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/certificate.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$NUMBER" -R "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue close "$NUMBER" -R "$REPO" --reason completed

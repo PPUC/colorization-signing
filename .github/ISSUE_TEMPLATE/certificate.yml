@@ -1,0 +1,20 @@
+name: Certificate request
+description: Ask for a certificate for your colorization signing key.
+title: "Certificate request"
+labels: ["certificate request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PPUC Colorizing DMD sends this request for you: Settings -> Signing -> Request
+        Certificate. To ask by hand, paste the public key the Signing page shows.
+
+        The certificate is issued for the GitHub account that opens this issue. A trusted member
+        approves it; the certificate is then posted here and the issue closed.
+  - type: input
+    id: public-key
+    attributes:
+      label: Public key
+      description: 64 hex digits, from Settings -> Signing.
+    validations:
+      required: true
