@@ -17,10 +17,15 @@ concurrency:
 
 jobs:
   check:
+    # A request is an issue titled "Certificate request" (the editor's and the form's; GitHub
+    # drops the labels of an issue someone without triage rights opens through the API), or
+    # one a member labels "certificate request" to run it again.
     if: >-
       github.event.issue.state == 'open' &&
-      contains(github.event.issue.labels.*.name, 'certificate request') &&
-      (github.event.action == 'opened' || github.event.label.name == 'certificate request')
+      ((github.event.action == 'opened' &&
+        startsWith(github.event.issue.title, 'Certificate request')) ||
+       (github.event.action == 'labeled' &&
+        github.event.label.name == 'certificate request'))
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -35,6 +40,12 @@ jobs:
           key=$(printf '%s\n' "$BODY" | grep -oiE '(^|[^0-9a-fA-F])[0-9a-fA-F]{64}($|[^0-9a-fA-F])' \
                 | grep -oiE '[0-9a-fA-F]{64}' | head -n 1 | tr 'A-F' 'a-f')
           echo "key=$key" >> "$GITHUB_OUTPUT"
+      - name: Label it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$NUMBER" -R "$REPO" --add-label "certificate request" || true
       - if: steps.key.outputs.key == ''
         name: Say that there is none
         env:
@@ -43,7 +54,7 @@ jobs:
           NUMBER: ${{ github.event.issue.number }}
         run: |
           gh issue comment "$NUMBER" -R "$REPO" --body \
-            "No public key found: it is 64 hex digits, from Settings -> Signing in PPUC Colorizing DMD. Edit the issue and add the label again, or open a new request."
+            "No public key found: it is 64 hex digits, from Settings -> Signing in PPUC Colorizing DMD. Open a new request."
 
   certify:
     needs: check

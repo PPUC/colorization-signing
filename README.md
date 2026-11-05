@@ -10,7 +10,9 @@ is: it binds the key to the GitHub account that asked for it.
 1. The author makes a key in PPUC Colorizing DMD (`Settings -> Signing`) and clicks
    `Request Certificate`. The editor opens an issue here, as the author, with the public key
    (the form in `.github/ISSUE_TEMPLATE/certificate.yml` does the same by hand).
-2. The workflow `Certify` finds the key and waits for approval in the `signing` environment.
+2. The workflow `Certify` takes every new issue titled `Certificate request`, labels it, finds
+   the key and waits for approval in the `signing` environment. A member can run a request
+   again by adding the label `certificate request`.
 3. A trusted member checks that the account belongs to an author and approves the run.
 4. The workflow issues the certificate with the issuer key, for `github:<account ID>` with the
    account's login as the name, posts it on the issue and closes it. The editor picks it up.
